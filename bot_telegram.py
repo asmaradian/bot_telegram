@@ -51,8 +51,8 @@ def get_updates(offset=None):
 def get_trading_days(start_date, count):
     """
     Mengembalikan list 'count' trading days mulai dari start_date.
-    Jika start_date adalah hari kerja, maka akan disertakan,
-    jika tidak, akan dilewati sampai hari kerja berikutnya.
+    Jika start_date merupakan hari kerja, maka disertakan,
+    jika tidak, akan dilewati sampai menemukan hari kerja berikutnya.
     """
     trading_days = []
     current_date = start_date
@@ -65,7 +65,8 @@ def get_trading_days(start_date, count):
 # ---------------------------
 # DAFTAR SAHAM LQ45 (Statis)
 # ---------------------------
-# Ticker internal memakai ekstensi ".JK" untuk penggunaan API; pada output ekstensi akan dihapus.
+# Ticker internal memakai ekstensi ".JK" untuk memanggil data dari Yahoo Finance.
+# Pada output, ekstensi akan dihapus untuk tampilan yang rapi.
 lq45_tickers = [
     "BBCA.JK", "TLKM.JK", "BBRI.JK", "BMRI.JK", "ASII.JK", "UNVR.JK", "PGAS.JK", "TINS.JK",
     "MDKA.JK", "ANTM.JK", "ICBP.JK", "INDF.JK", "ADRO.JK", "BRPT.JK", "CPIN.JK", "EXCL.JK",
@@ -90,7 +91,7 @@ def analyze_stock(ticker):
     Melakukan analisis untuk satu ticker.
     Mengembalikan tuple (result, buf) jika sukses, atau (None, None) jika gagal.
     """
-    today = datetime.today()  # Titik awal untuk label tanggal
+    today = datetime.today()  # Titik awal untuk label tanggal 
     try:
         data = yf.Ticker(ticker)
         df = data.history(period="6mo")
@@ -145,7 +146,7 @@ def analyze_stock(ticker):
             "Kenaikan (%)": kenaikan_persen
         }
 
-        # Buat label tanggal prediksi hanya untuk hari perdagangan dari HARI INI
+        # Buat label tanggal prediksi mulai dari HARI INI (hari perdagangan saja)
         trading_dates = get_trading_days(datetime.today(), len(predicted_prices.flatten()))
         tanggal_prediksi = [dt.strftime("%d-%m-%Y") for dt in trading_dates]
 
@@ -180,7 +181,7 @@ def analyze_stocks():
     Grafik tidak dikirim untuk analisis massal.
     """
     global predicted_stocks
-    predicted_stocks = []  # Hapus hasil analisis sebelumnya
+    predicted_stocks = []  # Reset hasil analisis sebelumnya
     for ticker in lq45_tickers:
         time.sleep(2)  # Jeda agar tidak membanjiri request ke Yahoo Finance
         result, _ = analyze_stock(ticker)
@@ -198,17 +199,19 @@ def analyze_stocks():
 def send_stock_chart(stock_code):
     """
     Menerima kode saham (contoh: 'BBCA' atau 'BBCA.JK').
-    Jika tidak ada '.JK', maka akan ditambahkan.
-    Mengirim grafik dan keterangan analisis untuk ticker tersebut.
+    Jika tidak ada ekstensi '.JK', akan ditambahkan.
+    Jika kode saham tidak ada dalam daftar LQ45, bot tetap melakukan 
+    analisis untuk ticker tersebut dan mengirim grafik beserta rekomendasi.
     """
     kode = stock_code.upper()
     if not kode.endswith(".JK"):
         kode_full = kode + ".JK"
     else:
         kode_full = kode
+
+    # Jika kode tidak berada di daftar LQ45, berikan pemberitahuan
     if kode_full not in lq45_tickers:
-        send_telegram_message(f"⚠ Kode saham {kode} tidak ditemukan dalam daftar.")
-        return
+        send_telegram_message(f"⚠ Kode saham {kode} tidak terdaftar dalam LQ45.\nMelakukan analisis untuk ticker {kode_full}...")
     result, buf = analyze_stock(kode_full)
     if result is None:
         send_telegram_message(f"⚠ Gagal melakukan analisis untuk {kode}.")
@@ -269,7 +272,4 @@ while True:
                 elif text == "ulang":
                     send_telegram_message("🔄 Melakukan analisis ulang... (hasil sebelumnya dihapus)")
                     analyze_stocks()
-                else:
-                    # Anggap pesan merupakan kode saham
-                    send_stock_chart(text)
-    time.sleep(5)
+                else
