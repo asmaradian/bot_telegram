@@ -11,6 +11,12 @@ from tensorflow.keras.layers import LSTM, Dense
 from sklearn.preprocessing import MinMaxScaler
 import os
 from datetime import datetime, timedelta
+import random
+
+# Set seed untuk memastikan model deterministik (hasil konsisten)
+np.random.seed(42)
+tf.random.set_seed(42)
+random.seed(42)
 
 # ---------------------------
 # KONFIGURASI TELEGRAM BOT
@@ -21,7 +27,11 @@ TELEGRAM_CHAT_ID = "6778588870"
 def send_telegram_message(message):
     """Kirim pesan teks ke Telegram."""
     url = f"https://api.telegram.org/bot{TELEGRAM_API_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
     response = requests.post(url, data=data)
     return response.status_code
 
@@ -46,18 +56,18 @@ def get_updates(offset=None):
     return []
 
 # ---------------------------
-# Fungsi BANTUAN UNTUK MENGAMBIL HARI PERDAGANGAN (TRADING DAYS)
+# Fungsi BANTUAN: MENGAMBIL HARI PERDAGANGAN (TRADING DAYS)
 # ---------------------------
 def get_trading_days(start_date, count):
     """
     Mengembalikan list 'count' trading days mulai dari start_date.
-    Jika start_date merupakan hari kerja, maka disertakan,
-    jika tidak, akan dilewati sampai menemukan hari kerja berikutnya.
+    Jika start_date adalah hari kerja, maka disertakan.
+    Jika tidak, dilewati sampai hari kerja berikutnya.
     """
     trading_days = []
     current_date = start_date
     while len(trading_days) < count:
-        if current_date.weekday() < 5:  # 0=Senin s/d 4=Jumat
+        if current_date.weekday() < 5:  # 0 = Senin, 4 = Jumat
             trading_days.append(current_date)
         current_date += timedelta(days=1)
     return trading_days
@@ -65,8 +75,8 @@ def get_trading_days(start_date, count):
 # ---------------------------
 # DAFTAR SAHAM LQ45 (Statis)
 # ---------------------------
-# Ticker internal memakai ekstensi ".JK" untuk memanggil data dari Yahoo Finance.
-# Pada output, ekstensi akan dihapus untuk tampilan yang rapi.
+# Ticker internal menggunakan ekstensi ".JK" (sesuai Yahoo Finance).
+# Untuk tampilan, ekstensi dihapus.
 lq45_tickers = [
     "BBCA.JK", "TLKM.JK", "BBRI.JK", "BMRI.JK", "ASII.JK", "UNVR.JK", "PGAS.JK", "TINS.JK",
     "MDKA.JK", "ANTM.JK", "ICBP.JK", "INDF.JK", "ADRO.JK", "BRPT.JK", "CPIN.JK", "EXCL.JK",
@@ -80,25 +90,26 @@ print(f"✅ Menggunakan daftar saham LQ45 statis ({len(lq45_tickers)} saham)")
 # ---------------------------
 # VARIABEL GLOBAL UNTUK MENYIMPAN HASIL ANALISIS
 # ---------------------------
-predicted_stocks = []      # Menyimpan saham dengan kenaikan >7%
-last_message_text = ""     # Untuk menghindari pengolahan duplikasi pesan
+predicted_stocks = []      # Hasil analisis untuk perintah "analisa" dan "ulang" (khusus saham LQ45)
+last_message_text = ""     # Untuk menghindari pemrosesan duplikasi pesan
 
 # ---------------------------
 # FUNGSI ANALISIS INDIVIDUAL
 # ---------------------------
 def analyze_stock(ticker):
     """
-    Melakukan analisis untuk satu ticker.
-    Mengembalikan tuple (result, buf) jika sukses, atau (None, None) jika gagal.
+    Melakukan analisis untuk satu ticker dan membuat grafik.
+    Mengembalikan tuple (result, buf) jika sukses, 
+    atau (None, None) jika gagal.
     """
-    today = datetime.today()  # Titik awal untuk label tanggal
+    today = datetime.today()  # Titik awal untuk label tanggal grafik
     try:
         data = yf.Ticker(ticker)
         df = data.history(period="6mo")
         if df.empty:
             return None, None
 
-        # Preprocessing data
+        # Preprocessing harga penutupan
         scaler = MinMaxScaler(feature_range=(0, 1))
         df_scaled = scaler.fit_transform(df["Close"].values.reshape(-1, 1))
 
@@ -109,7 +120,8 @@ def analyze_stock(ticker):
             y_train.append(df_scaled[i:i+7, 0])
         if not X_train:
             return None, None
-        X_train, y_train = np.array(X_train), np.array(y_train)
+        X_train = np.array(X_train)
+        y_train = np.array(y_train)
         X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
 
         # Muat atau latih model LSTM
@@ -146,7 +158,7 @@ def analyze_stock(ticker):
             "Kenaikan (%)": kenaikan_persen
         }
 
-        # Buat label tanggal prediksi mulai dari HARI INI (hari perdagangan saja)
+        # Label tanggal prediksi: mulai dari hari ini (hanya hari perdagangan)
         trading_dates = get_trading_days(datetime.today(), len(predicted_prices.flatten()))
         tanggal_prediksi = [dt.strftime("%d-%m-%Y") for dt in trading_dates]
 
@@ -161,6 +173,10 @@ def analyze_stock(ticker):
         plt.legend()
         plt.grid()
         plt.tight_layout()
+        # Tambahkan informasi tanggal dan waktu pembuatan grafik di pojok kanan atas
+        now_str = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        plt.gca().text(0.95, 0.95, now_str, transform=plt.gca().transAxes,
+                       horizontalalignment="right", verticalalignment="top", fontsize=8, color="gray")
         plt.subplots_adjust(bottom=0.25)
         buf = BytesIO()
         plt.savefig(buf, format="png")
@@ -172,18 +188,18 @@ def analyze_stock(ticker):
         return None, None
 
 # ---------------------------
-# FUNGSI ANALISIS MASSAL
+# FUNGSI ANALISIS MASSAL (KHUSUS LQ45)
 # ---------------------------
 def analyze_stocks():
     """
     Melakukan analisis untuk seluruh saham dalam lq45_tickers.
-    Menyimpan saham dengan kenaikan >7% ke variable global predicted_stocks.
-    Grafik tidak dikirim untuk analisis massal.
+    Hasil analisis yang memenuhi syarat (kenaikan >7%) disimpan pada variabel global predicted_stocks.
+    Grafik tidak dikirim pada analisis massal.
     """
     global predicted_stocks
     predicted_stocks = []  # Reset hasil analisis sebelumnya
     for ticker in lq45_tickers:
-        time.sleep(2)  # Jeda agar tidak membanjiri request ke Yahoo Finance
+        time.sleep(2)  # Jeda agar tidak membebani request ke Yahoo Finance
         result, _ = analyze_stock(ticker)
         if result and result["Kenaikan (%)"] >= 7:
             predicted_stocks.append(result)
@@ -194,14 +210,14 @@ def analyze_stocks():
     send_telegram_message(pesan)
 
 # ---------------------------
-# FUNGSI MENGIRIM GRAFIK DAN KETERANGAN SAHAM INDIVIDUAL
+# FUNGSI MENGIRIM GRAFIK & KETERANGAN (UNTUK PERINTAH KODE SAHAM)
 # ---------------------------
 def send_stock_chart(stock_code):
     """
     Menerima kode saham (misalnya 'BBCA' atau 'BBCA.JK').
-    Jika tidak ada ekstensi '.JK', akan ditambahkan.
-    Jika kode saham tidak ada dalam daftar LQ45, bot tetap melakukan 
-    analisis untuk ticker tersebut dan mengirim grafik beserta rekomendasi.
+    Jika tidak dilengkapi ekstensi '.JK', maka ditambahkan.
+    Jika ticker tidak ada di daftar lq45_tickers, bot tetap melakukan analisis
+    untuk ticker tersebut dan mengirim grafik beserta rekomendasi.
     """
     kode = stock_code.upper()
     if not kode.endswith(".JK"):
@@ -209,20 +225,23 @@ def send_stock_chart(stock_code):
     else:
         kode_full = kode
 
-    # Jika kode tidak berada di daftar LQ45, berikan pemberitahuan
     if kode_full not in lq45_tickers:
-        send_telegram_message(f"⚠ Kode saham {kode} tidak terdaftar dalam LQ45.\nMelakukan analisis untuk ticker {kode_full}...")
+        send_telegram_message(
+            f"⚠ Kode saham {kode} tidak terdaftar dalam LQ45.\nMelakukan analisis untuk ticker {kode_full}..."
+        )
     result, buf = analyze_stock(kode_full)
     if result is None:
         send_telegram_message(f"⚠ Gagal melakukan analisis untuk {kode}.")
     else:
         send_telegram_photo(buf)
         saham_clean = result["Saham"].replace(".JK", "")
-        pesan = (f"📈 *{saham_clean}*\n"
-                 f"Harga Sekarang: Rp{result['Harga Sekarang']:.2f}\n"
-                 f"Prediksi Beli: Rp{result['Prediksi Beli']:.2f}\n"
-                 f"Prediksi Jual: Rp{result['Prediksi Jual']:.2f}\n"
-                 f"Kenaikan: {result['Kenaikan (%)']:.2f}%")
+        pesan = (
+            f"📈 *{saham_clean}*\n"
+            f"Harga Sekarang: Rp{result['Harga Sekarang']:.2f}\n"
+            f"Prediksi Beli: Rp{result['Prediksi Beli']:.2f}\n"
+            f"Prediksi Jual: Rp{result['Prediksi Jual']:.2f}\n"
+            f"Kenaikan: {result['Kenaikan (%)']:.2f}%"
+        )
         send_telegram_message(pesan)
 
 # ---------------------------
@@ -238,34 +257,36 @@ while True:
     updates = get_updates(offset=last_update_id)
     if updates:
         for update in updates:
-            update_id = update["update_id"]
-            # Jika update sudah diproses, lewati
+            update_id = update.get("update_id")
             if update_id in processed_ids:
                 continue
             processed_ids.add(update_id)
             last_update_id = update_id + 1  # Perbarui offset
             if "message" in update and "text" in update["message"]:
                 text = update["message"]["text"].lower().strip()
-                # Cegah pengolahan duplikasi pesan jika pesan sama dengan pesan terakhir
+                # Cegah duplikasi pesan jika pesan sama dengan pesan terakhir
                 if text == last_message_text:
                     print(f"Duplikasi pesan terdeteksi: '{text}'")
                     continue
                 last_message_text = text
-                # Logging update untuk debug
                 print(f"Memproses update_id {update_id} dengan pesan: '{text}'")
+                
                 if text == "analisa":
                     send_telegram_message("🔄 Mulai analisis saham...")
                     analyze_stocks()
                 elif text == "cek":
+                    # Perintah "cek" hanya mengirimkan ringkasan dari data yang telah tersimpan dalam predicted_stocks.
                     send_telegram_message("🔄 Mengirim ringkasan analisis...")
                     if predicted_stocks:
                         summary = "📊 *10 Saham LQ45 dengan Kenaikan >7%:*\n\n"
                         top10 = sorted(predicted_stocks, key=lambda x: x["Kenaikan (%)"], reverse=True)[:10]
                         for stock in top10:
                             saham_clean = stock["Saham"].replace(".JK", "")
-                            summary += (f"🔹 {saham_clean} | Harga: Rp{stock['Harga Sekarang']:.2f} | "
-                                        f"Prediksi Jual: Rp{stock['Prediksi Jual']:.2f} | "
-                                        f"Kenaikan: {stock['Kenaikan (%)']:.2f}%\n")
+                            summary += (
+                                f"🔹 {saham_clean} | Harga: Rp{stock['Harga Sekarang']:.2f} | "
+                                f"Prediksi Jual: Rp{stock['Prediksi Jual']:.2f} | "
+                                f"Kenaikan: {stock['Kenaikan (%)']:.2f}%\n"
+                            )
                         send_telegram_message(summary)
                     else:
                         send_telegram_message("⚠ Data analisis belum tersedia. Gunakan perintah `analisa` terlebih dahulu.")
@@ -273,6 +294,6 @@ while True:
                     send_telegram_message("🔄 Melakukan analisis ulang... (hasil sebelumnya dihapus)")
                     analyze_stocks()
                 else:
-                    # Akhiri dengan blok else: anggap pesan sebagai kode saham
+                    # Anggap perintah sebagai ticker saham
                     send_stock_chart(text)
     time.sleep(5)
