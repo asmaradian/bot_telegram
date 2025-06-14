@@ -80,8 +80,8 @@ print(f"✅ Menggunakan daftar saham LQ45 statis ({len(lq45_tickers)} saham)")
 # ---------------------------
 # VARIABEL GLOBAL UNTUK MENYIMPAN HASIL ANALISIS
 # ---------------------------
-predicted_stocks = []  # Menyimpan saham dengan kenaikan >7%
-last_message_text = ""  # Untuk menghindari pengolahan duplikasi pesan
+predicted_stocks = []      # Menyimpan saham dengan kenaikan >7%
+last_message_text = ""     # Untuk menghindari pengolahan duplikasi pesan
 
 # ---------------------------
 # FUNGSI ANALISIS INDIVIDUAL
@@ -91,7 +91,7 @@ def analyze_stock(ticker):
     Melakukan analisis untuk satu ticker.
     Mengembalikan tuple (result, buf) jika sukses, atau (None, None) jika gagal.
     """
-    today = datetime.today()  # Titik awal untuk label tanggal 
+    today = datetime.today()  # Titik awal untuk label tanggal
     try:
         data = yf.Ticker(ticker)
         df = data.history(period="6mo")
@@ -198,7 +198,7 @@ def analyze_stocks():
 # ---------------------------
 def send_stock_chart(stock_code):
     """
-    Menerima kode saham (contoh: 'BBCA' atau 'BBCA.JK').
+    Menerima kode saham (misalnya 'BBCA' atau 'BBCA.JK').
     Jika tidak ada ekstensi '.JK', akan ditambahkan.
     Jika kode saham tidak ada dalam daftar LQ45, bot tetap melakukan 
     analisis untuk ticker tersebut dan mengirim grafik beserta rekomendasi.
@@ -272,4 +272,7 @@ while True:
                 elif text == "ulang":
                     send_telegram_message("🔄 Melakukan analisis ulang... (hasil sebelumnya dihapus)")
                     analyze_stocks()
-                else
+                else:
+                    # Akhiri dengan blok else: anggap pesan sebagai kode saham
+                    send_stock_chart(text)
+    time.sleep(5)
