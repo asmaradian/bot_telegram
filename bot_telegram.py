@@ -19,14 +19,14 @@ TELEGRAM_API_TOKEN = "7126717961:AAFz9fwffUPXlbAg3LqK9-zBF11hmI95KDw"
 TELEGRAM_CHAT_ID = "6778588870"
 
 def send_telegram_message(message):
-    """Mengirim pesan teks ke Telegram."""
+    """Kirim pesan teks ke Telegram."""
     url = f"https://api.telegram.org/bot{TELEGRAM_API_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     response = requests.post(url, data=data)
     return response.status_code
 
 def send_telegram_photo(image):
-    """Mengirim gambar ke Telegram."""
+    """Kirim gambar ke Telegram."""
     url = f"https://api.telegram.org/bot{TELEGRAM_API_TOKEN}/sendPhoto"
     files = {"photo": image}
     data = {"chat_id": TELEGRAM_CHAT_ID}
@@ -34,7 +34,7 @@ def send_telegram_photo(image):
     return response.status_code
 
 def get_updates(offset=None):
-    """Mengambil update baru dari Telegram dengan mekanisme offset."""
+    """Ambil update baru dari Telegram dengan mekanisme offset."""
     url = f"https://api.telegram.org/bot{TELEGRAM_API_TOKEN}/getUpdates"
     params = {}
     if offset:
@@ -48,7 +48,8 @@ def get_updates(offset=None):
 # ---------------------------
 # DAFTAR SAHAM LQ45 (Statis)
 # ---------------------------
-# Internal ticker masih menggunakan format .JK; saat tampil di Telegram, ekstensi dihilangkan.
+# Internal ticker tetap menggunakan .JK agar valid untuk Yahoo Finance,
+# tetapi saat dikirim ke user, ekstensi akan dihapus.
 lq45_tickers = [
     "BBCA.JK", "TLKM.JK", "BBRI.JK", "BMRI.JK", "ASII.JK", "UNVR.JK", "PGAS.JK", "TINS.JK", 
     "MDKA.JK", "ANTM.JK", "ICBP.JK", "INDF.JK", "ADRO.JK", "BRPT.JK", "CPIN.JK", "EXCL.JK", 
@@ -57,22 +58,21 @@ lq45_tickers = [
     "MNCN.JK", "PTPP.JK", "SCMA.JK", "SIDO.JK", "SMRA.JK", "TBIG.JK", "TOWR.JK", "UNTR.JK", 
     "WIKA.JK", "WIIM.JK", "ZINC.JK"
 ]
-
 print(f"✅ Menggunakan daftar saham LQ45 statis ({len(lq45_tickers)} saham)")
 
 # ---------------------------
-# Variabel Global untuk Menyimpan Hasil Analisis
+# VARIABEL GLOBAL UNTUK MENYIMPAN HASIL ANALISIS
 # ---------------------------
-predicted_stocks = []  # Hanya akan menyimpan saham dengan kenaikan >7%
+predicted_stocks = []  # Hanya menyimpan saham dengan kenaikan >7%
 
 # ---------------------------
-# Fungsi untuk Analisis Saham Individual
+# FUNGSI UNTUK ANALISIS SAHAM INDIVIDUAL
 # ---------------------------
 def analyze_stock(ticker):
     """
-    Melakukan analisis untuk satu kode saham.
+    Melakukan analisis untuk satu ticker.
     Mengembalikan tuple (result, buf).
-      - result: dictionary yang berisi data analisis (jika data valid), atau None.
+      - result: dictionary berisi data analisis (jika valid) atau None.
       - buf: BytesIO berisi grafik prediksi, atau None jika gagal.
     """
     today = datetime.today()
@@ -81,8 +81,8 @@ def analyze_stock(ticker):
         df = data.history(period="6mo")
         if df.empty:
             return None, None
-        
-        # Preprocess
+
+        # Preprocessing data
         scaler = MinMaxScaler(feature_range=(0, 1))
         df_scaled = scaler.fit_transform(df["Close"].values.reshape(-1, 1))
         
@@ -91,10 +91,8 @@ def analyze_stock(ticker):
         for i in range(60, len(df_scaled) - 7):
             X_train.append(df_scaled[i-60:i, 0])
             y_train.append(df_scaled[i:i+7, 0])
-        
         if not X_train:
             return None, None
-        
         X_train, y_train = np.array(X_train), np.array(y_train)
         X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
         
@@ -112,11 +110,10 @@ def analyze_stock(ticker):
             model.fit(X_train, y_train, epochs=10, batch_size=32, verbose=0)
             model.save(model_path)
         
-        # Prediksi 7 hari ke depan
+        # Prediksi 7 hari mendatang
         last_60_days = df_scaled[-60:].reshape(1, 60, 1)
         predicted_prices = model.predict(last_60_days)
         predicted_prices = scaler.inverse_transform(predicted_prices.reshape(-1, 1))
-        
         if len(predicted_prices.flatten()) < 7:
             return None, None
         
@@ -126,7 +123,7 @@ def analyze_stock(ticker):
         kenaikan_persen = ((harga_prediksi_tertinggi - harga_sekarang) / harga_sekarang) * 100
         
         result = {
-            "Saham": ticker,
+            "Saham": ticker,  # Tetap dengan .JK secara internal
             "Harga Sekarang": harga_sekarang,
             "Prediksi Beli": harga_prediksi_beli,
             "Prediksi Jual": harga_prediksi_tertinggi,
@@ -134,7 +131,8 @@ def analyze_stock(ticker):
         }
         
         # Buat grafik prediksi
-        tanggal_prediksi = [(today + timedelta(days=i)).strftime("%d-%m-%Y") for i in range(1, len(predicted_prices.flatten()) + 1)]
+        tanggal_prediksi = [(today + timedelta(days=i)).strftime("%d-%m-%Y") 
+                            for i in range(1, len(predicted_prices.flatten()) + 1)]
         plt.figure(figsize=(8, 4))
         plt.plot(tanggal_prediksi, predicted_prices.flatten(), marker="o", linestyle="-", label="Prediksi Harga")
         plt.axhline(y=harga_sekarang, color="r", linestyle="--", label="Harga Sekarang")
@@ -149,31 +147,27 @@ def analyze_stock(ticker):
         buf = BytesIO()
         plt.savefig(buf, format="png")
         buf.seek(0)
-        plt.close()  # Tutup figure untuk menghindari tumpukan memory
+        plt.close()  # Tutup figure untuk menghemat memory
         return result, buf
     except Exception as e:
         print(f"Error saat analisis {ticker}: {e}")
         return None, None
 
 # ---------------------------
-# Fungsi untuk Melakukan Analisis pada Semua Saham
+# FUNGSI UNTUK ANALISIS MASSAL
 # ---------------------------
 def analyze_stocks():
     """
     Melakukan analisis untuk seluruh saham dalam lq45_tickers.
-    Hanya menyimpan saham dengan kenaikan >7% ke dalam variabel global predicted_stocks.
-    Grafik tidak dikirim saat analisis massal untuk menghemat bandwidth.
+    Menyimpan saham dengan kenaikan >7% ke global predicted_stocks tanpa mengirim grafik.
     """
     global predicted_stocks
-    predicted_stocks = []  # Hapus hasil analisis sebelumnya
+    predicted_stocks = []  # Hapus hasil analisis lama
     for ticker in lq45_tickers:
-        # Gunakan jeda agar tidak membanjiri akses ke Yahoo Finance
-        time.sleep(2)
+        time.sleep(2)  # Jeda untuk mencegah ban request
         result, _ = analyze_stock(ticker)
-        # Simpan hanya jika kenaikan >7%
         if result and result["Kenaikan (%)"] >= 7:
             predicted_stocks.append(result)
-    # Kirim pesan ringkasan analisis
     if predicted_stocks:
         pesan = "✅ *Analisis selesai!*\nGunakan perintah `cek` untuk melihat ringkasan 10 saham terbaik."
     else:
@@ -181,13 +175,13 @@ def analyze_stocks():
     send_telegram_message(pesan)
 
 # ---------------------------
-# Fungsi untuk Mengirim Grafik dan Keterangan Satu Saham
+# FUNGSI UNTUK MENGIRIM GRAFIK DAN KETERANGAN SAHAM INDIVIDUAL
 # ---------------------------
 def send_stock_chart(stock_code):
     """
-    Menerima kode saham (misalnya 'BBCA' atau 'BBCA.JK').
-    Jika tidak ada ekstensi, tambahkan '.JK' lalu lakukan analisis untuk saham tersebut.
-    Kirim grafik dan keterangan harga beli/jual ke Telegram.
+    Menerima kode saham (contoh: 'BBCA' atau 'BBCA.JK').
+    Jika tidak memuat ekstensi '.JK', maka akan ditambahkan.
+    Kemudian, melakukan analisis untuk ticker tersebut dan mengirim grafik serta keterangan.
     """
     kode = stock_code.upper()
     if not kode.endswith(".JK"):
@@ -201,9 +195,7 @@ def send_stock_chart(stock_code):
     if result is None:
         send_telegram_message(f"⚠ Gagal melakukan analisis untuk {kode}.")
     else:
-        # Kirim grafik
         send_telegram_photo(buf)
-        # Kirim ringkasan
         saham_clean = result["Saham"].replace(".JK", "")
         pesan = (f"📈 *{saham_clean}*\n"
                  f"Harga Sekarang: Rp{result['Harga Sekarang']:.2f}\n"
@@ -213,27 +205,34 @@ def send_stock_chart(stock_code):
         send_telegram_message(pesan)
 
 # ---------------------------
-# Proses Update dari Telegram dengan Offset
+# PROSES UPDATE DARI TELEGRAM DENGAN OFFSET
 # ---------------------------
 last_update_id = None
+processed_ids = set()  # Untuk memastikan update tidak terduplikasi
 
 # ---------------------------
-# Loop Utama Bot
+# LOOP UTAMA BOT
 # ---------------------------
 while True:
     updates = get_updates(offset=last_update_id)
     if updates:
         for update in updates:
-            last_update_id = update["update_id"] + 1  # Agar pesan tidak diproses ulang
+            update_id = update["update_id"]
+            # Jika update sudah pernah diproses, lewati
+            if update_id in processed_ids:
+                continue
+            processed_ids.add(update_id)
+            last_update_id = update_id + 1  # Perbarui offset
             if "message" in update and "text" in update["message"]:
                 text = update["message"]["text"].lower().strip()
+                # Logging update
+                print(f"Memproses update_id {update_id} dengan pesan: '{text}'")
                 if text == "analisa":
                     send_telegram_message("🔄 Mulai analisis saham...")
                     analyze_stocks()
                 elif text == "cek":
-                    send_telegram_message("🔄 Mengirim ulang hasil analisis terakhir...")
+                    send_telegram_message("🔄 Mengirim ulang ringkasan analisis...")
                     if predicted_stocks:
-                        # Kirim ringkasan 10 saham dengan kenaikan tertinggi
                         summary = "📊 *10 Saham LQ45 dengan Kenaikan >7%:*\n\n"
                         top10 = sorted(predicted_stocks, key=lambda x: x["Kenaikan (%)"], reverse=True)[:10]
                         for stock in top10:
@@ -245,10 +244,10 @@ while True:
                     else:
                         send_telegram_message("⚠ Data analisis belum tersedia. Gunakan perintah `analisa` terlebih dahulu.")
                 elif text == "ulang":
-                    send_telegram_message("🔄 Melakukan analisis ulang... (hasil lama akan dihapus)")
+                    send_telegram_message("🔄 Melakukan analisis ulang... (hasil sebelumnya dihapus)")
                     analyze_stocks()
                 else:
-                    # Jika perintah bukan "analisa", "cek", atau "ulang",
-                    # anggap pesan tersebut adalah kode saham.
+                    # Anggap bahwa input bukan "analisa", "cek", atau "ulang"
+                    # sebagai kode saham untuk analisis individual.
                     send_stock_chart(text)
     time.sleep(5)
