@@ -1,8 +1,6 @@
 # stock_analyzer.py
 
 import yfinance as yf
-yf.pdr_override()
-
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
