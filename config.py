@@ -1,10 +1,9 @@
 # config.py
 
-# Token API Telegram (jaga kerahasiaannya, jangan upload ke GitHub publik!)
-TELEGRAM_API_TOKEN = "7126717961:AAFz9fwffUPXlbAg3LqK9-zBF11hmI95KDw"
+import os
 
-# Chat ID target (bisa channel, grup, atau user)
-TELEGRAM_CHAT_ID = "6778588870"
+TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Daftar saham LQ45 statis dari Yahoo Finance (.JK = Bursa Efek Indonesia)
 LQ45_TICKERS = [
