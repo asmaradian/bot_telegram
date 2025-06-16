@@ -1,7 +1,7 @@
-yfinance
-pandas
-numpy
-tensorflow
-matplotlib
-scikit-learn
-requests
+yfinance==0.1.70
+pandas==1.5.3
+numpy==1.21.2
+tensorflow==2.9.1
+matplotlib==3.5.1
+scikit-learn==1.0.2
+requests==2.27.1
