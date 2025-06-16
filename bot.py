@@ -42,3 +42,5 @@ while True:
             send_stock_chart(msg)
 
     time.sleep(5)
+
+# trigger deploy
