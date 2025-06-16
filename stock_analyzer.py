@@ -16,12 +16,12 @@ from tensorflow.keras.layers import LSTM, Dense
 from telegram_utils import send_message, send_photo
 from config import TELEGRAM_CHAT_ID, LQ45_TICKERS
 
-# Set seed agar hasil model konsisten
+# Set seed agar model konsisten
 np.random.seed(42)
 tf.random.set_seed(42)
 
 def get_trading_days(start_date, count):
-    """Mengembalikan N hari kerja ke depan dari tanggal tertentu"""
+    """Mengembalikan N hari kerja dari start_date"""
     days = []
     while len(days) < count:
         if start_date.weekday() < 5:
@@ -30,13 +30,13 @@ def get_trading_days(start_date, count):
     return days
 
 def analyze_stock(ticker):
-    """Melakukan prediksi harga saham menggunakan LSTM"""
+    """Prediksi harga saham dengan LSTM dan kirim grafik ke Telegram"""
     try:
         data = yf.Ticker(ticker)
-        df = data.history(period="6mo")
+        df = data.history(period="6mo", interval="1d")
 
         if df.empty:
-            send_message(f"⚠ Tidak ada data historis untuk {ticker}", TELEGRAM_CHAT_ID)
+            send_message(f"⚠ Tidak ada data historis untuk *{ticker}*.\nCek ulang apakah kode saham valid di Yahoo Finance.", TELEGRAM_CHAT_ID)
             return None, None
 
         scaler = MinMaxScaler()
@@ -44,16 +44,17 @@ def analyze_stock(ticker):
 
         X, y = [], []
         for i in range(60, len(scaled) - 7):
-            X.append(scaled[i-60:i])
-            y.append(scaled[i:i+7])
+            X.append(scaled[i - 60:i])
+            y.append(scaled[i:i + 7])
         if not X:
-            send_message(f"⚠ Data tidak cukup untuk {ticker}", TELEGRAM_CHAT_ID)
+            send_message(f"⚠ Data tidak cukup untuk menganalisis *{ticker}*", TELEGRAM_CHAT_ID)
             return None, None
 
         X = np.array(X).reshape(-1, 60, 1)
         y = np.array(y)
 
         model_path = f"models/{ticker}_model.h5"
+        os.makedirs("models", exist_ok=True)
         if os.path.exists(model_path):
             model = load_model(model_path)
         else:
@@ -99,32 +100,30 @@ def analyze_stock(ticker):
         return result, buf
 
     except Exception as e:
-        send_message(f"⚠ Gagal analisis {ticker}: {e}", TELEGRAM_CHAT_ID)
+        send_message(f"⚠ Gagal analisis *{ticker}*: {e}", TELEGRAM_CHAT_ID)
         return None, None
 
 def analyze_stocks():
-    """Analisis massal saham LQ45 dan kembalikan yang berpotensi naik >7%"""
+    """Analisa massal saham LQ45"""
     results = []
     for ticker in LQ45_TICKERS:
-        time.sleep(2)
+        time.sleep(3)  # Perpanjang jeda untuk hindari pemblokiran
         result, _ = analyze_stock(ticker)
         if result and result["Kenaikan (%)"] > 7:
             results.append(result)
     return results
 
 def send_stock_chart(stock_code):
-    """Terima kode saham, lakukan analisis, dan kirim hasil & grafik ke Telegram"""
+    """Analisa 1 saham, kirim grafik & rekomendasi ke Telegram"""
     code = stock_code.upper()
     if not code.endswith(".JK"):
         code += ".JK"
 
     result, chart = analyze_stock(code)
     if not result:
-        send_message(f"⚠ Gagal menganalisa {stock_code}", TELEGRAM_CHAT_ID)
         return
 
     send_photo(chart, TELEGRAM_CHAT_ID)
-
     pesan = (
         f"📈 *{code.replace('.JK','')}*\n"
         f"Harga Sekarang: Rp{result['Harga Sekarang']:.2f}\n"
