@@ -110,7 +110,7 @@ def analyze_stocks():
     """Melakukan analisis massal semua saham LQ45."""
     results = []
     for ticker in LQ45_TICKERS:
-        time.sleep(3)  # Delay agar tidak over-request ke Yahoo Finance
+        time.sleep(15)  # Delay agar tidak over-request ke Yahoo Finance
         result, _ = analyze_stock(ticker)
         if result and result["Kenaikan (%)"] > 7:
             results.append(result)
